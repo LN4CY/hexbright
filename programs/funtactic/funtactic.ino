@@ -94,10 +94,16 @@ void loop()
      //Transition
      if(hb.button_just_released())
      {
-        if(hb.button_pressed_time() < 500)
+        if(hb.button_pressed_time() < 300)
         {
            mode = LOW_MODE;
            Serial.println("LOW_MODE");
+
+        }   
+        else if(hb.button_pressed_time() < 500)
+        {
+           mode = OFF_MODE;
+           Serial.println("OFF_MODE");
         }
      }
      else if(hb.button_pressed_time() > 500)
@@ -112,10 +118,15 @@ void loop()
      //Transition
      if(hb.button_just_released())
      {
-        if(hb.button_pressed_time() < 500)
+        if(hb.button_pressed_time() < 300)
         {
            mode = MID_MODE;
            Serial.println("MID_MODE");
+        }   
+        else if(hb.button_pressed_time() < 500)
+        {
+           mode = OFF_MODE;
+           Serial.println("OFF_MODE");
         }
      }
      else if(hb.button_pressed_time() > 500)
@@ -130,10 +141,16 @@ void loop()
      //Transition
      if(hb.button_just_released())
      {
-        if(hb.button_pressed_time() < 500)
+        if(hb.button_pressed_time() < 300)
         {
            mode = HIGH_MODE;
            Serial.println("HIGH_MODE");
+
+        }   
+        else if(hb.button_pressed_time() < 500)
+        {
+           mode = OFF_MODE;
+           Serial.println("OFF_MODE");
         }
      }
      else if(hb.button_pressed_time() > 500)
@@ -148,10 +165,15 @@ void loop()
      //Transition
      if(hb.button_just_released())
      {
-        if(hb.button_pressed_time() < 500)
+        if(hb.button_pressed_time() < 300)
         {
            mode = MAX_MODE;
            Serial.println("MAX_MODE");
+        }   
+        else if(hb.button_pressed_time() < 500)
+        {
+           mode = OFF_MODE;
+           Serial.println("OFF_MODE");
         }
      }
      else if(hb.button_pressed_time() > 500)
@@ -205,7 +227,7 @@ void loop()
      }
      if(hb.button_just_released() && !blocked)
      {
-       if(hb.button_pressed_time() < 500)
+        if(hb.button_pressed_time() < 300)
         {
            int current_level = hb.get_light_level();
            if(current_level <= 125)
@@ -233,6 +255,11 @@ void loop()
               mode = OFF_MODE;
               Serial.println("OFF_MODE");
            }
+        }
+        else if(hb.button_pressed_time() < 500)
+        {
+           mode = OFF_MODE;
+           Serial.println("OFF_MODE");
         }
      }  
      if(hb.button_pressed_time() > 500 && !blocked)
