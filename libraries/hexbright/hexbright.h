@@ -44,7 +44,7 @@ either expressed or implied, of the FreeBSD Project.
 #define FREE_RAM // comment out to save 146 bytes when in debug mode
 //#define STROBE // comment out to save 260 bytes (strobe is designed for high-precision
 //               //  stroboscope code, not general periodic flashing)
-
+#define GLOW_CHARGE
 // The above #defines can help if you are running out of flash.  If you are having weird lockups,
 //  you may be running out of ram.  See freeRam's definition for additional information.
 

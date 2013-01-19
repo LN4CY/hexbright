@@ -1097,8 +1097,34 @@ unsigned char hexbright::get_definite_charge_state() {
 
 void hexbright::print_charge(unsigned char led) {
   unsigned char charge_state = get_charge_state();
+  #ifdef GLOW_CHARGE
+  static int brightness;
+  static unsigned char dir;
+  #endif
   if(charge_state == CHARGING && get_led_state(led) == LED_OFF) {
-    set_led(led, 350, 350);
+    #ifdef GLOW_CHARGE
+	if(dir == 1)
+	{
+		brightness=brightness+2;
+	}
+	else
+	{
+		brightness=brightness-2;
+	}
+	if(brightness >= 255 && dir == 1)
+	{
+	  brightness = 255;	
+	  dir = 0;
+	}
+	if(brightness <= 1 && dir == 0)
+	{
+		brightness = 0;
+		dir = 1;
+	}
+	analogWrite(DPIN_GLED, brightness);
+	#else
+	set_led(led, 350, 350);
+	#endif
   } else if (charge_state == CHARGED) {
     set_led(led,50);
   }
