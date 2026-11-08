@@ -52,11 +52,11 @@ While the light is active in any stepped mode, the tail LEDs continuously displa
    * **Ones digit** = Red LED blinks
    *(e.g., 2 Green + 4 Red = 24°C)*
 2. **Pre-Separator Pause**:
-   * Exactly **250 ms** dark pause.
+   * Exactly **350 ms** dark pause.
 3. **Inverted Transition Separator**:
    * Distinct, fast-blink pattern: **Red $\to$ Green $\to$ Red** (60 ms pulses).
 4. **Post-Separator Pause**:
-   * Exactly **250 ms** dark pause.
+   * Exactly **350 ms** dark pause.
 5. **Battery State of Charge (SOC %)**:
    * **Tens digit** = Green LED blinks
    * **Ones digit** = Red LED blinks

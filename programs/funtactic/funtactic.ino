@@ -99,8 +99,8 @@ void run_status_display() {
       }
       break;
 
-    case 2: // Pre-separator dark pause: exactly 250 ms
-      if (now - disp_timer >= 250) {
+    case 2: // Pre-separator dark pause: exactly 350 ms
+      if (now - disp_timer >= 350) {
         disp_timer = now;
         disp_state = 3; // Begin inverted separator: Red -> Green -> Red
       }
@@ -133,8 +133,8 @@ void run_status_display() {
       }
       break;
 
-    case 6: // Post-separator dark pause: exactly 250 ms
-      if (now - disp_timer >= 250) {
+    case 6: // Post-separator dark pause: exactly 350 ms
+      if (now - disp_timer >= 350) {
         // Print battery SOC (tens on Green, ones on Red):
         hb.print_number(get_battery_soc());
         disp_state = 7;
@@ -157,7 +157,7 @@ void run_status_display() {
 }
 
 void common_active_actions(void) {
-  // Feature 4: Low-battery management + Enhanced Status Display (Temp -> 250ms -> R,G,R -> 250ms -> SOC -> 500ms)
+  // Feature 4: Low-battery management + Enhanced Status Display (Temp -> 350ms -> R,G,R -> 350ms -> SOC -> 500ms)
   if (hb.low_voltage_state()) {
     // Under low battery, automatically step down high output modes to preserve cell
     if (mode > MID_MODE) {
