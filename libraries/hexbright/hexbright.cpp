@@ -1016,25 +1016,24 @@ void hexbright::update_number() {
     }
 #endif
     if(!print_wait_time) {
-      if(_number==1) { // minimum delay between printing numbers
-        print_wait_time = 2500/update_delay;
+      if(_number==1) { // printing complete - zero wait to give caller exact timing control
+        print_wait_time = 0;
         _number = 0;
         return;
       } else {
-        print_wait_time = 300/update_delay;
+        print_wait_time = 450/update_delay; // 450ms cycle per digit for comfortable counting
       }
       if(_number/10*10==_number) {
 #if (DEBUG==DEBUG_NUMBER)
         Serial.println("zero");
 #endif
-        //        print_wait_time = 500/update_delay;
-        set_led(_color, 400);
+        set_led(_color, 500); // 500ms long flash for zero
       } else {
-        set_led(_color, 120);
+        set_led(_color, 180); // 180ms pulse on (was 120ms)
         _number--;
       }
       if(_number && !(_number%10)) { // next digit?
-        print_wait_time = 600/update_delay;
+        print_wait_time = 750/update_delay; // 750ms inter-digit pause (was 600ms)
         _color = flip_color(_color);
         _number = _number/10;
       }
