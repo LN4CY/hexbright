@@ -48,16 +48,20 @@ While tapping from OFF, the main beam stays dark so multi-clicks don't pre-flash
 ### 5. Enhanced Status Display Telemetry
 While the light is active in any stepped mode, the tail LEDs continuously display a repeating telemetry cycle:
 1. **Internal Temperature (°C)**:
-   * **Tens place** = Green LED blinks
-   * **Ones place** = Red LED blinks  
+   * **Tens digit** = Green LED blinks
+   * **Ones digit** = Red LED blinks  
    *(e.g., 2 Green + 4 Red = 24°C)*
-2. **Transition Separator**:
-   * Quick, distinct **Green $\to$ Red $\to$ Green** fast-blink pulse.
-3. **Battery State of Charge (SOC %)**:
-   * **Tens place** = Green LED blinks
-   * **Ones place** = Red LED blinks  
+2. **Pre-Separator Pause**:
+   * 500 ms dark pause after temperature finishes.
+3. **Inverted Transition Separator**:
+   * Distinct, fast-blink pattern: **Red $\to$ Green $\to$ Red** (70 ms pulses).
+4. **Post-Separator Dark Delay**:
+   * **1.0-second full dark delay** so the separator is completely distinct from the upcoming battery reading.
+5. **Battery State of Charge (SOC %)**:
+   * **Tens digit** = Green LED blinks
+   * **Ones digit** = Red LED blinks  
    *(e.g., 8 Green + 5 Red = 85% SOC; 9 Green + 5 Red = 95% SOC)*
-4. **Pause**:
+6. **Cycle Pause**:
    * 2.5-second dark pause, then the sequence repeats starting back at temperature.
 
 ### 6. Battery Safety & Charging

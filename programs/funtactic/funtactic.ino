@@ -85,7 +85,7 @@ void run_status_display() {
   unsigned long now = millis();
 
   switch (disp_state) {
-    case 0: // DISP_TEMP: Start printing temperature in Celsius
+    case 0: // DISP_TEMP: Start printing temperature in Celsius (tens on Green, ones on Red)
       if (!hb.printing_number()) {
         hb.print_number(hb.get_celsius());
         disp_state = 1;
@@ -95,46 +95,60 @@ void run_status_display() {
     case 1: // DISP_TEMP_WAIT: Wait for temperature print to complete
       if (!hb.printing_number()) {
         disp_timer = now;
-        disp_state = 2; // Begin separator
+        disp_state = 2; // Pre-separator pause
       }
       break;
 
-    case 2: // Fast blink GREEN (60ms)
-      if (now - disp_timer < 60) {
-        hb.set_led(GLED, 50);
-      } else if (now - disp_timer >= 120) {
+    case 2: // Pre-separator dark pause (500 ms)
+      if (now - disp_timer >= 500) {
         disp_timer = now;
-        disp_state = 3;
+        disp_state = 3; // Begin inverted separator: Red -> Green -> Red
       }
       break;
 
-    case 3: // Fast blink RED (60ms)
-      if (now - disp_timer < 60) {
-        hb.set_led(RLED, 50);
-      } else if (now - disp_timer >= 120) {
+    case 3: // Separator 1: Fast blink RED (70 ms)
+      if (now - disp_timer < 70) {
+        hb.set_led(RLED, 60);
+      } else if (now - disp_timer >= 140) {
         disp_timer = now;
         disp_state = 4;
       }
       break;
 
-    case 4: // Fast blink GREEN (60ms)
-      if (now - disp_timer < 60) {
-        hb.set_led(GLED, 50);
-      } else if (now - disp_timer >= 240) {
-        // Separator complete! Now print battery SOC:
-        hb.print_number(get_battery_soc());
+    case 4: // Separator 2: Fast blink GREEN (70 ms)
+      if (now - disp_timer < 70) {
+        hb.set_led(GLED, 60);
+      } else if (now - disp_timer >= 140) {
+        disp_timer = now;
         disp_state = 5;
       }
       break;
 
-    case 5: // DISP_SOC_WAIT: Wait for battery SOC print to complete
-      if (!hb.printing_number()) {
+    case 5: // Separator 3: Fast blink RED (70 ms)
+      if (now - disp_timer < 70) {
+        hb.set_led(RLED, 60);
+      } else if (now - disp_timer >= 140) {
         disp_timer = now;
-        disp_state = 6;
+        disp_state = 6; // Move to post-separator delay
       }
       break;
 
-    case 6: // DISP_PAUSE: 2.5 second pause between cycles
+    case 6: // Post-separator dark delay (1000 ms = 1.0 second) to clearly distinguish SOC
+      if (now - disp_timer >= 1000) {
+        // Print battery SOC (tens on Green, ones on Red):
+        hb.print_number(get_battery_soc());
+        disp_state = 7;
+      }
+      break;
+
+    case 7: // DISP_SOC_WAIT: Wait for battery SOC print to complete
+      if (!hb.printing_number()) {
+        disp_timer = now;
+        disp_state = 8;
+      }
+      break;
+
+    case 8: // DISP_PAUSE: 2.5 second pause between full cycles
       if (now - disp_timer >= 2500) {
         disp_state = 0; // Repeat cycle starting with temperature
       }
@@ -143,7 +157,7 @@ void run_status_display() {
 }
 
 void common_active_actions(void) {
-  // Feature 4: Low-battery management + Enhanced Status Display (Temp -> G,R,G -> SOC)
+  // Feature 4: Low-battery management + Enhanced Status Display (Temp -> R,G,R -> 1s pause -> SOC)
   if (hb.low_voltage_state()) {
     // Under low battery, automatically step down high output modes to preserve cell
     if (mode > MID_MODE) {
