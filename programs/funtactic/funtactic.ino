@@ -26,6 +26,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include <hexbright.h>
+#include <EEPROM.h>
+
+// EEPROM Storage Addresses
+#define EEPROM_LOCKED     0  // Stores non-volatile lockout state (1 = locked, 0 = unlocked)
 
 // Defined modes
 #define OFF_MODE          0  // main LED off, system in low-power standby
@@ -86,6 +90,16 @@ void common_active_actions(void) {
 
 void setup() {
   hb.init_hardware();
+
+  // Restore non-volatile Lockout state across power-downs
+  byte val = EEPROM.read(EEPROM_LOCKED);
+  if (val == 1) {
+    locked = true;
+  } else if (val != 0) {
+    // First boot or uninitialized EEPROM (0xFF)
+    EEPROM.update(EEPROM_LOCKED, 0);
+    locked = false;
+  }
 }
 
 void loop() {
@@ -100,10 +114,10 @@ void loop() {
     // ==========================================
     case OFF_MODE:
       if (off_clicks > 0) {
-        // Keep CPU latched ON and Cree LED at 0 while settling clicks
+        // Keep CPU latched ON and Cree LED dark (0) while settling multi-clicks
         hb.set_light(CURRENT_LEVEL, 0, NOW);
       } else {
-        // Fully power down regulator when idle in OFF mode
+        // Fully unlatch power regulator when idle in OFF mode
         hb.set_light(CURRENT_LEVEL, OFF_LEVEL, NOW);
       }
 
@@ -111,7 +125,7 @@ void loop() {
         hb.print_power(); // Handles breathing charge glow & low-voltage indication when off
       }
 
-      // Press-and-hold (>500ms) from OFF -> Tilt-adjustable Strobe
+      // Press-and-hold (>500ms) from OFF -> Tilt-adjustable Strobe (only when unlocked)
       if (!locked && off_clicks == 0 && hb.button_pressed() && hb.button_pressed_time() > 500) {
         mode = STROBE_MODE;
         mode_enter_time = now;
@@ -126,21 +140,22 @@ void loop() {
         }
       }
 
-      // Once the 280 ms click window expires after the last release, turn on selected mode:
+      // Once the 280 ms click window expires after the last release, evaluate clicks:
       if (off_clicks > 0 && (now - last_click_time > CLICK_WINDOW)) {
         if (locked) {
           if (off_clicks >= 4) {
             // 4 Clicks while locked -> Unlock!
             locked = false;
+            EEPROM.update(EEPROM_LOCKED, 0);
             hb.set_led(GLED, 400); // Solid green confirmation
           } else {
-            // 1-3 Clicks while locked -> Warn "Locked" without delay
+            // 1-3 Clicks while locked -> Non-blocking Red warn
             hb.set_led(RLED, 100);
           }
         } else {
           switch (off_clicks) {
             case 1:
-              // 1 Click: Turn on cleanly to MIN_MODE (no flashing)
+              // 1 Click: Turn on cleanly to MIN_MODE (no pre-flash)
               mode = MIN_MODE;
               mode_enter_time = now;
               break;
@@ -150,14 +165,15 @@ void loop() {
               mode_enter_time = now;
               break;
             case 3:
-              // 3 Clicks: Turn on directly to Tactical Strobe (surprise!)
+              // 3 Clicks: Turn on directly to Tactical Strobe (~13 Hz)
               delta_t = TACTICAL_STROBE_DT;
               mode = STROBE_SET_MODE;
               mode_enter_time = now;
               break;
             default:
-              // 4 or more clicks: Pocket Lockout
+              // 4 or more clicks: Pocket Lockout (persist in EEPROM)
               locked = true;
+              EEPROM.update(EEPROM_LOCKED, 1);
               hb.set_led(RLED, 400); // Solid red confirmation
               break;
           }
@@ -179,7 +195,7 @@ void loop() {
       if (hb.button_just_released()) {
         unsigned long pressed_dur = hb.button_pressed_time();
 
-        // Track clicks while ON
+        // Track rapid clicks while ON
         if (now - last_on_click_time < CLICK_WINDOW) {
           on_clicks++;
         } else {
