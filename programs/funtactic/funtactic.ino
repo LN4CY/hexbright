@@ -41,7 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // Configuration timings
 #define TIMEOUT_TO_OFF    1200 // ms of active runtime before a single short click turns off directly
-#define CLICK_WINDOW       350 // ms window to register rapid multi-clicks
+#define CLICK_WINDOW       280 // ms window to settle multi-clicks before turning on selected mode
 #define TACTICAL_STROBE_DT 0.15f // Default fast tactical strobe interval (~13 Hz)
 
 int mode = OFF_MODE;
@@ -53,7 +53,9 @@ bool locked = false;
 
 unsigned long mode_enter_time = 0;
 unsigned long last_click_time = 0;
-byte click_count = 0;
+byte off_clicks = 0;
+byte on_clicks = 0;
+unsigned long last_on_click_time = 0;
 
 hexbright hb;
 
@@ -90,11 +92,6 @@ void loop() {
   hb.update();
   unsigned long now = millis();
 
-  // Reset multi-click accumulator if user paused between clicks
-  if (click_count > 0 && (now - last_click_time > CLICK_WINDOW)) {
-    click_count = 0;
-  }
-
   // --- STATE MACHINE ---
   switch (mode) {
 
@@ -102,58 +99,58 @@ void loop() {
     // OFF MODE
     // ==========================================
     case OFF_MODE:
-      hb.set_light(CURRENT_LEVEL, OFF_LEVEL, NOW);
+      if (off_clicks > 0) {
+        // Keep CPU latched ON and Cree LED at 0 while settling clicks
+        hb.set_light(CURRENT_LEVEL, 0, NOW);
+      } else {
+        // Fully power down regulator when idle in OFF mode
+        hb.set_light(CURRENT_LEVEL, OFF_LEVEL, NOW);
+      }
 
       if (!hb.printing_number()) {
         hb.print_power(); // Handles breathing charge glow & low-voltage indication when off
       }
 
       // Press-and-hold (>500ms) from OFF -> Tilt-adjustable Strobe
-      if (!locked && click_count == 0 && hb.button_pressed() && hb.button_pressed_time() > 500) {
+      if (!locked && off_clicks == 0 && hb.button_pressed() && hb.button_pressed_time() > 500) {
         mode = STROBE_MODE;
         mode_enter_time = now;
         break;
       }
 
-      // Button release handling while OFF
+      // Accumulate clicks on button release while OFF (light stays completely dark)
       if (hb.button_just_released()) {
-        unsigned long pressed_dur = hb.button_pressed_time();
-
-        if (pressed_dur < 450) {
-          if (now - last_click_time < CLICK_WINDOW) {
-            click_count++;
-          } else {
-            click_count = 1;
-          }
+        if (hb.button_pressed_time() < 450) {
+          off_clicks++;
           last_click_time = now;
+        }
+      }
 
-          if (locked) {
-            if (click_count >= 4) {
-              // 4 Clicks while locked -> Unlock!
-              locked = false;
-              click_count = 0;
-              hb.set_led(GLED, 400); // Solid green confirmation
-            } else {
-              // 1-3 Clicks while locked -> Warn "Locked" without delay
-              hb.set_led(RLED, 80);
-            }
-            break;
+      // Once the 280 ms click window expires after the last release, turn on selected mode:
+      if (off_clicks > 0 && (now - last_click_time > CLICK_WINDOW)) {
+        if (locked) {
+          if (off_clicks >= 4) {
+            // 4 Clicks while locked -> Unlock!
+            locked = false;
+            hb.set_led(GLED, 400); // Solid green confirmation
+          } else {
+            // 1-3 Clicks while locked -> Warn "Locked" without delay
+            hb.set_led(RLED, 100);
           }
-
-          // Unlocked multi-click routing from OFF:
-          switch (click_count) {
+        } else {
+          switch (off_clicks) {
             case 1:
-              // 1 Click: Turn on immediately to MIN_MODE (zero delay)
+              // 1 Click: Turn on cleanly to MIN_MODE (no flashing)
               mode = MIN_MODE;
               mode_enter_time = now;
               break;
             case 2:
-              // 2 Clicks: Jump to 100% Turbo (MAX_MODE)
+              // 2 Clicks: Turn on directly to 100% Turbo (MAX_MODE)
               mode = MAX_MODE;
               mode_enter_time = now;
               break;
             case 3:
-              // 3 Clicks: Direct Tactical Strobe hands-free (~13 Hz)
+              // 3 Clicks: Turn on directly to Tactical Strobe (surprise!)
               delta_t = TACTICAL_STROBE_DT;
               mode = STROBE_SET_MODE;
               mode_enter_time = now;
@@ -161,12 +158,11 @@ void loop() {
             default:
               // 4 or more clicks: Pocket Lockout
               locked = true;
-              mode = OFF_MODE;
-              click_count = 0;
               hb.set_led(RLED, 400); // Solid red confirmation
               break;
           }
         }
+        off_clicks = 0;
       }
       break;
 
@@ -183,41 +179,28 @@ void loop() {
       if (hb.button_just_released()) {
         unsigned long pressed_dur = hb.button_pressed_time();
 
-        // Check if this is a rapid follow-up click from power-on
-        if (now - last_click_time < CLICK_WINDOW) {
-          click_count++;
+        // Track clicks while ON
+        if (now - last_on_click_time < CLICK_WINDOW) {
+          on_clicks++;
         } else {
-          click_count = 1;
+          on_clicks = 1;
         }
-        last_click_time = now;
+        last_on_click_time = now;
 
-        // Multi-click shortcuts while active:
-        if (click_count == 2 && pressed_dur < 300) {
-          // Double-click jumps to 100% Turbo
+        // Double-click shortcut to Turbo from any active mode
+        if (on_clicks == 2 && pressed_dur < 300) {
           mode = MAX_MODE;
           mode_enter_time = now;
-          break;
-        } else if (click_count == 3 && pressed_dur < 300) {
-          // Triple-click jumps to Tactical Strobe
-          delta_t = TACTICAL_STROBE_DT;
-          mode = STROBE_SET_MODE;
-          mode_enter_time = now;
-          break;
-        } else if (click_count >= 4 && pressed_dur < 300) {
-          // Quad-click from active shuts down & locks
-          locked = true;
-          mode = OFF_MODE;
-          click_count = 0;
-          hb.set_led(RLED, 400);
+          on_clicks = 0;
           break;
         }
 
         if (pressed_dur < 300) {
           // Feature 2: Timeout-to-Off (Direct-Off)
           if (now - mode_enter_time > TIMEOUT_TO_OFF) {
-            // It has been active for > 1.2s: single click turns straight OFF
+            // Active for > 1.2s: single click turns straight OFF
             mode = OFF_MODE;
-            click_count = 0;
+            on_clicks = 0;
           } else {
             // Rapid successive click within 1.2s: cycle to next brightness level
             mode = (mode == MAX_MODE) ? OFF_MODE : (mode + 1);
@@ -226,12 +209,12 @@ void loop() {
         } else if (pressed_dur < 500) {
           // Medium press (300-500ms): turn OFF immediately at any time
           mode = OFF_MODE;
-          click_count = 0;
+          on_clicks = 0;
         }
       } else if (hb.button_pressed_time() > 500) {
         // Press-and-hold (>500ms): smooth transition to tilt-dimming (ACCEL_MODE)
         mode = ACCEL_MODE;
-        click_count = 0;
+        on_clicks = 0;
       }
       break;
 
@@ -252,7 +235,7 @@ void loop() {
         mode = ACCEL_SET_MODE;
         mode_enter_time = now;
         blocked = 1;
-        click_count = 0;
+        on_clicks = 0;
       }
       break;
 
@@ -269,7 +252,7 @@ void loop() {
           // Feature 2: Timeout-to-off
           if (now - mode_enter_time > TIMEOUT_TO_OFF) {
             mode = OFF_MODE;
-            click_count = 0;
+            on_clicks = 0;
           } else {
             // Map current brightness to nearest stepped mode
             int current_level = hb.get_light_level();
@@ -282,13 +265,13 @@ void loop() {
           }
         } else if (pressed_dur < 500) {
           mode = OFF_MODE;
-          click_count = 0;
+          on_clicks = 0;
         }
       }
       if (hb.button_pressed_time() > 500 && !blocked) {
         // Hold again to re-enter tilt-adjustment
         mode = ACCEL_MODE;
-        click_count = 0;
+        on_clicks = 0;
       }
       break;
 
@@ -312,7 +295,7 @@ void loop() {
         mode = STROBE_SET_MODE;
         blocked = 1;
         mode_enter_time = now;
-        click_count = 0;
+        on_clicks = 0;
       }
       break;
     }
@@ -333,13 +316,13 @@ void loop() {
         if (hb.button_pressed_time() < 500) {
           // Single short click turns OFF
           mode = OFF_MODE;
-          click_count = 0;
+          on_clicks = 0;
         }
       }
       if (hb.button_pressed_time() > 500 && !blocked) {
         // Press-and-hold (>500ms) re-enters live tilt frequency adjustment!
         mode = STROBE_MODE;
-        click_count = 0;
+        on_clicks = 0;
       }
       break;
     }
