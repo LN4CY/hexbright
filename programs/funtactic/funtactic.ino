@@ -48,8 +48,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define STROBE_SET_MODE   9  // hold chosen strobe rate
 
 // Configuration timings
-#define TIMEOUT_TO_OFF    1200 // ms of runtime before a single short click turns off directly
-#define CLICK_WINDOW       350 // ms window to register multi-clicks (double, triple, quad)
+#define TIMEOUT_TO_OFF    1200 // ms of active runtime before a single short click turns off directly
+#define CLICK_WINDOW       280 // ms window to register multi-clicks (single, double, triple, quad)
 #define TACTICAL_STROBE_DT 0.15f // Default fast tactical strobe interval (~13 Hz)
 
 int mode = OFF_MODE;
@@ -61,7 +61,9 @@ bool locked = false;
 
 unsigned long mode_enter_time = 0;
 unsigned long last_click_time = 0;
-byte click_count = 0;
+byte off_clicks = 0;
+byte on_clicks = 0;
+unsigned long last_on_click_time = 0;
 
 hexbright hb;
 
@@ -108,15 +110,6 @@ void loop() {
   hb.update();
   unsigned long now = millis();
 
-  // Multi-click detection window timeout
-  if (click_count > 0 && (now - last_click_time > CLICK_WINDOW)) {
-    if (locked) {
-      // If locked and user clicked 1-3 times, warn that light is locked
-      blink_feedback(RLED, 2);
-    }
-    click_count = 0;
-  }
-
   // --- STATE MACHINE ---
   switch (mode) {
 
@@ -130,64 +123,60 @@ void loop() {
         hb.print_power(); // Handles breathing charge glow & low-voltage indication when off
       }
 
-      if (hb.button_just_released()) {
-        unsigned long pressed_dur = hb.button_pressed_time();
-
-        // Count clicks within the multi-click window
-        if (now - last_click_time < CLICK_WINDOW) {
-          click_count++;
-        } else {
-          click_count = 1;
-        }
-        last_click_time = now;
-
-        // Feature 1: Pocket Lockout (4 rapid clicks toggles lock)
-        if (click_count >= 4) {
-          locked = !locked;
-          click_count = 0;
-          if (locked) {
-            blink_feedback(RLED, 3); // 3 Red flashes = Locked
-          } else {
-            blink_feedback(GLED, 3); // 3 Green flashes = Unlocked
-          }
-          break;
-        }
-
-        if (locked) {
-          // While locked, prevent turning on
-          break;
-        }
-
-        // Feature 3: Shortcuts from OFF
-        if (click_count == 2 && pressed_dur < 350) {
-          // Double-click -> Instant Turbo (MAX_MODE 100%)
-          mode = MAX_MODE;
-          mode_enter_time = now;
-          click_count = 0;
-          DBG(Serial.println(F("TURBO (Double-click)")));
-          break;
-        } else if (click_count == 3 && pressed_dur < 350) {
-          // Triple-click -> Direct Tactical Strobe hands-free (Approach A)
-          delta_t = TACTICAL_STROBE_DT;
-          mode = STROBE_SET_MODE;
-          mode_enter_time = now;
-          click_count = 0;
-          DBG(Serial.println(F("DIRECT STROBE (Triple-click)")));
-          break;
-        }
-
-        // Standard 1-click turn on
-        if (pressed_dur < 500) {
-          mode = MIN_MODE;
-          mode_enter_time = now;
-          DBG(Serial.println(F("MIN_MODE")));
-        }
-      } else if (!locked && hb.button_pressed_time() > 500) {
-        // Press-and-hold (>500ms) from OFF -> Strobe mode with live tilt tuning
+      // Check for press-and-hold (>500ms) from OFF -> Tilt-adjustable Strobe
+      if (!locked && off_clicks == 0 && hb.button_pressed() && hb.button_pressed_time() > 500) {
         mode = STROBE_MODE;
         mode_enter_time = now;
-        click_count = 0;
-        DBG(Serial.println(F("STROBE_MODE")));
+        DBG(Serial.println(F("STROBE_MODE (hold)")));
+        break;
+      }
+
+      // Count clicks on each short release from OFF
+      if (hb.button_just_released()) {
+        if (hb.button_pressed_time() < 450) {
+          off_clicks++;
+          last_click_time = now;
+        }
+      }
+
+      // Once the click window expires after the last release, evaluate click count:
+      if (off_clicks > 0 && (now - last_click_time > CLICK_WINDOW)) {
+        if (locked) {
+          if (off_clicks >= 4) {
+            locked = false;
+            blink_feedback(GLED, 3); // 3 Green flashes = Unlocked!
+          } else {
+            blink_feedback(RLED, 2); // 2 Red flashes = Locked!
+          }
+        } else {
+          switch (off_clicks) {
+            case 1:
+              // 1 Click: Turn on to MIN_MODE
+              mode = MIN_MODE;
+              mode_enter_time = now;
+              DBG(Serial.println(F("MIN_MODE")));
+              break;
+            case 2:
+              // 2 Clicks: Instant Turbo (100% MAX_MODE)
+              mode = MAX_MODE;
+              mode_enter_time = now;
+              DBG(Serial.println(F("TURBO (Double-click)")));
+              break;
+            case 3:
+              // 3 Clicks: Direct Tactical Strobe hands-free (~13 Hz)
+              delta_t = TACTICAL_STROBE_DT;
+              mode = STROBE_SET_MODE;
+              mode_enter_time = now;
+              DBG(Serial.println(F("DIRECT STROBE (Triple-click)")));
+              break;
+            default:
+              // 4 or more clicks: Pocket Lockout
+              locked = true;
+              blink_feedback(RLED, 3); // 3 Red flashes = Locked!
+              break;
+          }
+        }
+        off_clicks = 0;
       }
       break;
 
@@ -204,31 +193,31 @@ void loop() {
       if (hb.button_just_released()) {
         unsigned long pressed_dur = hb.button_pressed_time();
 
-        // Multi-click tracking while ON
-        if (now - last_click_time < CLICK_WINDOW) {
-          click_count++;
+        // Check for double-click to Turbo while ON
+        if (now - last_on_click_time < CLICK_WINDOW) {
+          on_clicks++;
         } else {
-          click_count = 1;
+          on_clicks = 1;
         }
-        last_click_time = now;
+        last_on_click_time = now;
 
-        // Feature 3: Double-click from ANY stepped mode jumps straight to Turbo
-        if (click_count == 2 && pressed_dur < 300) {
+        if (on_clicks == 2 && pressed_dur < 300) {
           mode = MAX_MODE;
           mode_enter_time = now;
-          click_count = 0;
-          DBG(Serial.println(F("TURBO (Double-click)")));
+          on_clicks = 0;
+          DBG(Serial.println(F("TURBO from ON (Double-click)")));
           break;
         }
 
         if (pressed_dur < 300) {
           // Feature 2: Timeout-to-Off (Direct-Off)
           if (now - mode_enter_time > TIMEOUT_TO_OFF) {
-            // Active for > 1.2s: turn straight OFF
+            // It has been active for > 1.2s: turn straight OFF
             mode = OFF_MODE;
+            on_clicks = 0;
             DBG(Serial.println(F("DIRECT OFF")));
           } else {
-            // Rapid successive click: step to next brightness level
+            // Rapid successive click: cycle to next brightness level
             mode = (mode == MAX_MODE) ? OFF_MODE : (mode + 1);
             mode_enter_time = now;
             DBG(Serial.println(F("CYCLE MODE")));
@@ -236,12 +225,13 @@ void loop() {
         } else if (pressed_dur < 500) {
           // Medium press (300-500ms): turn OFF immediately at any time
           mode = OFF_MODE;
+          on_clicks = 0;
           DBG(Serial.println(F("OFF_MODE")));
         }
       } else if (hb.button_pressed_time() > 500) {
         // Press-and-hold (>500ms): smooth transition to tilt-dimming (ACCEL_MODE)
         mode = ACCEL_MODE;
-        click_count = 0;
+        on_clicks = 0;
         DBG(Serial.println(F("ACCEL_MODE")));
       }
       break;
