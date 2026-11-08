@@ -63,24 +63,101 @@ unsigned long last_on_click_time = 0;
 
 hexbright hb;
 
+int get_battery_soc() {
+  int mv = hb.get_avr_voltage();
+  if (hb.get_charge_state() == CHARGED) return 99;
+  if (hb.get_charge_state() == CHARGING) return 88;
+
+  if (mv >= 3300) return 95;
+  if (mv >= 3250) return 85;
+  if (mv >= 3200) return 70;
+  if (mv >= 3150) return 55;
+  if (mv >= 3100) return 40;
+  if (mv >= 3000) return 25;
+  if (mv >= 2900) return 15;
+  if (mv >= 2800) return 10;
+  return 5;
+}
+
+void run_status_display() {
+  static byte disp_state = 0;
+  static unsigned long disp_timer = 0;
+  unsigned long now = millis();
+
+  switch (disp_state) {
+    case 0: // DISP_TEMP: Start printing temperature in Celsius
+      if (!hb.printing_number()) {
+        hb.print_number(hb.get_celsius());
+        disp_state = 1;
+      }
+      break;
+
+    case 1: // DISP_TEMP_WAIT: Wait for temperature print to complete
+      if (!hb.printing_number()) {
+        disp_timer = now;
+        disp_state = 2; // Begin separator
+      }
+      break;
+
+    case 2: // Fast blink GREEN (60ms)
+      if (now - disp_timer < 60) {
+        hb.set_led(GLED, 50);
+      } else if (now - disp_timer >= 120) {
+        disp_timer = now;
+        disp_state = 3;
+      }
+      break;
+
+    case 3: // Fast blink RED (60ms)
+      if (now - disp_timer < 60) {
+        hb.set_led(RLED, 50);
+      } else if (now - disp_timer >= 120) {
+        disp_timer = now;
+        disp_state = 4;
+      }
+      break;
+
+    case 4: // Fast blink GREEN (60ms)
+      if (now - disp_timer < 60) {
+        hb.set_led(GLED, 50);
+      } else if (now - disp_timer >= 240) {
+        // Separator complete! Now print battery SOC:
+        hb.print_number(get_battery_soc());
+        disp_state = 5;
+      }
+      break;
+
+    case 5: // DISP_SOC_WAIT: Wait for battery SOC print to complete
+      if (!hb.printing_number()) {
+        disp_timer = now;
+        disp_state = 6;
+      }
+      break;
+
+    case 6: // DISP_PAUSE: 2.5 second pause between cycles
+      if (now - disp_timer >= 2500) {
+        disp_state = 0; // Repeat cycle starting with temperature
+      }
+      break;
+  }
+}
+
 void common_active_actions(void) {
-  // Feature 4: Low-battery management + Celsius temperature blinking
+  // Feature 4: Low-battery management + Enhanced Status Display (Temp -> G,R,G -> SOC)
   if (hb.low_voltage_state()) {
     // Under low battery, automatically step down high output modes to preserve cell
     if (mode > MID_MODE) {
       mode = MID_MODE;
     }
-    // Suppress temp blinking and pulse tail Red LED every 1.5s as an urgent warning
+    // Suppress status display and pulse tail Red LED every 1.5s as an urgent warning
     static unsigned long last_warn_time = 0;
     if (millis() - last_warn_time > 1500) {
       last_warn_time = millis();
       hb.set_led(RLED, 50);
     }
   } else {
-    // Normal battery: blink internal Celsius temperature (tens on green, ones on red)
-    if (!hb.printing_number()) {
-      hb.print_number(hb.get_celsius());
-    }
+    // Normal battery: run composite status display
+    run_status_display();
   }
 
   if (mode >= MIN_MODE && mode <= MAX_MODE) {
